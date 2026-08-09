@@ -1,0 +1,98 @@
+// EvoTech AI — database schema
+// Modular on purpose: Website content is stored as structured JSON (siteData)
+// rather than raw HTML, so future products (dashboards, WhatsApp bot, etc.)
+// can read/write the same structured representation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  FREE
+  GOLD
+}
+
+enum WebsiteStatus {
+  DRAFT
+  GENERATING
+  READY
+  PUBLISHED
+  FAILED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  plan            PlanTier @default(FREE)
+  subscription    Subscription?
+  websites        Website[]
+  usageEvents     UsageEvent[]
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String    @unique
+  plan              PlanTier  @default(FREE)
+  status            String    @default("active") // active | past_due | cancelled
+  intasendCustomerId String?
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Website {
+  id          String        @id @default(cuid())
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+
+  name        String
+  slug        String        @unique
+  status      WebsiteStatus @default(DRAFT)
+  template    String        // e.g. "barber-salon", "restaurant"
+
+  // The AI-generated, AI-editable structured representation of the site.
+  // Rendered client-side by src/components/site-renderer/SiteRenderer.tsx
+  siteData    Json
+
+  // Original raw intake describing the business (kept for regeneration).
+  intake      Json
+
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  generations Generation[]
+}
+
+model Generation {
+  id          String   @id @default(cuid())
+  website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  websiteId   String
+
+  type        String   // "initial" | "edit" | "regenerate"
+  prompt      String   // user's natural-language instruction (or intake summary)
+  provider    String   // "anthropic" | "openai"
+  model       String
+  success     Boolean  @default(true)
+  errorMessage String?
+  createdAt   DateTime @default(now())
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  kind      String   // "generation" | "edit"
+  createdAt DateTime @default(now())
+}
